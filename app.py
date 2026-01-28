@@ -9,16 +9,19 @@ import re
 class YouTubeMaster:
     def __init__(self, url):
         self.url = url
-        # 'MWEB'은 모바일 웹 환경으로 접속하는 설정입니다. 403 에러 방지에 가장 효과적입니다.
-        self.yt = YouTube(self.url, client='MWEB')
+        # 💡 OAuth를 사용하면 유튜브가 '인증된 사용자'로 인식할 확률이 높습니다.
+        # 인증을 위해 로그창에 코드가 뜰 수 있으니, 아래 설정을 추가합니다.
+        self.yt = YouTube(
+            self.url, 
+            client='ANDROID', # 혹은 'WEB'
+            use_oauth=True, 
+            allow_oauth_cache=True
+        )
 
     def download_video(self):
-        # 720p 합본(progressive) 스트림 찾기
+        # 가장 안전한 방식
         stream = self.yt.streams.filter(progressive=True, file_extension='mp4').get_highest_resolution()
         
-        if not stream:
-            raise Exception("적절한 영상 스트림을 찾을 수 없습니다.")
-            
         clean_title = re.sub(r'[\\/:*?"<>|]', '', self.yt.title)
         file_path = stream.download(filename=f"{clean_title}.mp4")
         return file_path, clean_title
@@ -65,5 +68,6 @@ if st.button("🚀 파일 준비하기"):
 
 # 하단 안내 메시지
 st.caption("※ 주의: 고화질(1080p 이상)은 별도의 인코딩 과정이 필요하여 현재는 720p로 제공됩니다.")
+
 
 
