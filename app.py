@@ -4,18 +4,17 @@ import os
 import re
 
 # 1. 유튜브 다운로드 로봇 클래스
+# 1. 유튜브 다운로드 로봇 클래스 수정
 class YouTubeMaster:
     def __init__(self, url):
         self.url = url
-        # pytubefix 객체 생성
-        self.yt = YouTube(self.url)
+        # 💡 [핵심] client='WEB_CHECKOUT' 옵션을 넣으면 403 에러를 피할 확률이 매우 높습니다!
+        self.yt = YouTube(self.url, client='WEB_CHECKOUT')
 
     def download_video(self):
-        # 가장 안정적인 720p 합본(Progressive) 스트림을 가져옵니다.
-        # (인코딩 없이 바로 성공하기 위해 이 방식을 씁니다.)
+        # 가장 안정적인 720p 합본 스트림
         stream = self.yt.streams.filter(progressive=True, file_extension='mp4').get_highest_resolution()
         
-        # 파일명에서 특수문자를 제거하여 안전하게 만듭니다.
         clean_title = re.sub(r'[\\/:*?"<>|]', '', self.yt.title)
         file_path = stream.download(filename=f"{clean_title}.mp4")
         return file_path, clean_title
@@ -62,3 +61,4 @@ if st.button("🚀 파일 준비하기"):
 
 # 하단 안내 메시지
 st.caption("※ 주의: 고화질(1080p 이상)은 별도의 인코딩 과정이 필요하여 현재는 720p로 제공됩니다.")
+
