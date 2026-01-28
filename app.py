@@ -3,51 +3,62 @@ from pytubefix import YouTube
 import os
 import re
 
-# 1. 요리 로봇 (기능)
+# 1. 유튜브 다운로드 로봇 클래스
 class YouTubeMaster:
-    def download_logic(self, url, mode):
-        try:
-            yt = YouTube(url)
-            clean_title = re.sub(r'[\\/:*?"<>|]', '', yt.title)
-            
-            if mode == "🎬 영상 (720p)":
-                stream = yt.streams.get_highest_resolution()
-                file_path = stream.download(filename=f"{clean_title}.mp4")
-                return file_path, f"{clean_title}.mp4"
-            else:
-                stream = yt.streams.get_audio_only()
-                out_file = stream.download(filename=f"{clean_title}.m4a")
-                new_file = clean_title + '.mp3'
-                os.rename(out_file, new_file)
-                return new_file, new_file
-        except Exception as e:
-            return None, f"❌ 에러 발생: {e}"
+    def __init__(self, url):
+        self.url = url
+        # pytubefix 객체 생성
+        self.yt = YouTube(self.url)
 
-# 2. 웹 화면 꾸미기
-st.set_page_config(page_title="나만의 유튜버 비서", page_icon="📺")
-st.title("📺 YouTube Downloader")
-st.write("주소를 넣고 원하는 형식을 골라보세요!")
+    def download_video(self):
+        # 가장 안정적인 720p 합본(Progressive) 스트림을 가져옵니다.
+        # (인코딩 없이 바로 성공하기 위해 이 방식을 씁니다.)
+        stream = self.yt.streams.filter(progressive=True, file_extension='mp4').get_highest_resolution()
+        
+        # 파일명에서 특수문자를 제거하여 안전하게 만듭니다.
+        clean_title = re.sub(r'[\\/:*?"<>|]', '', self.yt.title)
+        file_path = stream.download(filename=f"{clean_title}.mp4")
+        return file_path, clean_title
 
-url = st.text_input("YouTube URL을 붙여넣으세요", placeholder="https://www.youtube.com/...")
-mode = st.radio("다운로드 형식 선택", ["🎬 영상 (720p)", "🎵 오디오 (MP3)"])
+# 2. 스트림릿 웹 화면 구성
+st.set_page_config(page_title="우리 반 유튜브 다운로더", page_icon="📺")
+st.title("📺 우리 반 전용 유튜브 다운로더")
+st.info("유튜브 주소를 넣고 '파일 준비하기'를 눌러주세요!")
 
-if st.button("파일 준비하기"):
+# URL 입력창
+url = st.text_input("YouTube URL을 붙여넣으세요", placeholder="https://www.youtube.com/watch?v=...")
+
+if st.button("🚀 파일 준비하기"):
     if url:
-        master = YouTubeMaster()
-        with st.spinner("유튜브에서 데이터를 가져오는 중..."):
-            file_path, display_name = master.download_logic(url, mode)
-            
-        if file_path:
-            st.success(f"준비 완료: {display_name}")
-            # 웹앱은 서버에 저장된 파일을 사용자가 '다운로드' 버튼을 눌러 가져가게 해야 합니다.
-            with open(file_path, "rb") as f:
-                st.download_button(
-                    label="내 컴퓨터로 저장하기",
-                    data=f,
-                    file_name=display_name,
-                    mime="video/mp4" if "🎬" in mode else "audio/mpeg"
-                )
+        # 진행 상황을 보여주는 로그창 시작!
+        with st.status("로봇이 일을 시작했습니다...", expanded=True) as status:
+            try:
+                st.write("🔍 주소 연결 중...")
+                master = YouTubeMaster(url)
+                
+                st.write(f"🎬 영상 확인: **{master.yt.title}**")
+                st.write("📥 유튜브 서버에서 영상을 가져오는 중... (잠시만 기다려주세요)")
+                
+                # 실제 다운로드 실행
+                file_path, video_title = master.download_video()
+                
+                st.write("✅ 서버 준비 완료! 이제 내 컴퓨터로 옮길 수 있습니다.")
+                status.update(label="🎊 모든 준비가 끝났습니다!", state="complete", expanded=False)
+
+                # 파일이 성공적으로 준비되면 '진짜 저장 버튼'을 보여줍니다.
+                with open(file_path, "rb") as f:
+                    st.download_button(
+                        label="💾 내 컴퓨터에 최종 저장하기",
+                        data=f,
+                        file_name=f"{video_title}.mp4",
+                        mime="video/mp4",
+                        use_container_width=True # 버튼을 가로로 길게 만들어줍니다.
+                    )
+            except Exception as e:
+                status.update(label="❌ 에러가 발생했습니다!", state="error")
+                st.error(f"상세 에러 내용: {e}")
     else:
+        st.warning("주소를 먼저 입력해 주세요!")
 
-        st.warning("주소를 먼저 입력해주세요!")
-
+# 하단 안내 메시지
+st.caption("※ 주의: 고화질(1080p 이상)은 별도의 인코딩 과정이 필요하여 현재는 720p로 제공됩니다.")
