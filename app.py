@@ -45,6 +45,8 @@ if st.button("파일 준비하기"):
                     label="내 컴퓨터로 저장하기",
                     data=f,
                     file_name=display_name
+                    mime="video/mp4" if "🎬" in mode else "audio/mpeg"
                 )
     else:
+
         st.warning("주소를 먼저 입력해주세요!")
