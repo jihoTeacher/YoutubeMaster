@@ -13,9 +13,7 @@ class YouTubeMaster:
         # 인증을 위해 로그창에 코드가 뜰 수 있으니, 아래 설정을 추가합니다.
         self.yt = YouTube(
             self.url, 
-            client='ANDROID', # 혹은 'WEB'
-            use_oauth=True, 
-            allow_oauth_cache=True
+            client='MWEB', # 혹은 'WEB'
         )
 
     def download_video(self):
@@ -68,6 +66,7 @@ if st.button("🚀 파일 준비하기"):
 
 # 하단 안내 메시지
 st.caption("※ 주의: 고화질(1080p 이상)은 별도의 인코딩 과정이 필요하여 현재는 720p로 제공됩니다.")
+
 
 
 
