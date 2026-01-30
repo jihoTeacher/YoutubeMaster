@@ -1,61 +1,97 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime, date
 
-# --- 시험 대비 공지 페이지 ---
-if menu == "📝 시험 대비 공지":
-    st.title("📝 시험 대비 정보 공유")
+# 1. 페이지 설정
+st.set_page_config(page_title="우리 반 학습 커뮤니티", page_icon="🏫", layout="wide")
+
+# 2. 구글 시트 연결 (Secrets에 설정하거나 아래 URL에 직접 입력)
+# 시트 공유 설정을 '링크가 있는 모든 사용자 - 편집자'로 하셔야 저장 기능이 작동합니다.
+SHEET_URL = "여러분의_구글_스프레드시트_주소를_여기에_넣으세요"
+
+try:
+    conn = st.connection("gsheets", type=GSheetsConnection)
+except Exception as e:
+    st.error("구글 시트 연결 설정이 필요합니다.")
+
+# 3. 사이드바 메뉴
+menu = st.sidebar.radio("📍 바로가기", ["📅 시험 대비 공지", "📮 익명 건의함"])
+
+# --- [메뉴 1: 시험 대비 공지] ---
+if menu == "📅 시험 대비 공지":
+    st.title("✍️ 시험 대비 통합 공지판")
     
-    # 1. D-Day 설정
-    st.subheader("⏳ 시험 카운트다운")
-    exam_date = st.date_input("시험 시작일을 선택하세요", date(2024, 7, 1)) # 기본값 설정
-    today = date.today()
-    d_day = (exam_date - today).days
-    
-    if d_day > 0:
-        st.metric(label="기말고사까지", value=f"D-{d_day}")
-    elif d_day == 0:
-        st.balloons()
-        st.metric(label="기말고사", value="D-Day")
-    else:
-        st.metric(label="기말고사", value=f"D+{-d_day}")
+    # (1) 디데이 섹션
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        st.subheader("⏳ D-Day")
+        target_date = st.date_input("시험 시작일", date(2026, 7, 1)) # 날짜를 자유롭게 설정
+        d_day = (target_date - date.today()).days
+        if d_day > 0:
+            st.metric(label="기말고사까지", value=f"D-{d_day}")
+        elif d_day == 0:
+            st.metric(label="기말고사", value="D-Day", delta="🔥 오늘입니다!")
+        else:
+            st.metric(label="기말고사", value=f"D+{-d_day}")
+
+    with col2:
+        st.subheader("📢 오늘 핵심 공지")
+        st.info("수행평가 일정과 시험 범위를 확인하고 미리 준비하세요!")
 
     st.divider()
 
-    # 2. 수행평가 일정 (입력 및 출력)
-    st.subheader("📅 수행평가 일정")
+    # (2) 수행평가 일정 (게시판 형태)
+    st.subheader("📋 수행평가 일정표")
     
-    # 입력 폼
-    with st.expander("➕ 수행평가 일정 추가하기"):
-        with st.form("performance_test_form", clear_on_submit=True):
-            sub_name = st.text_input("과목명")
-            test_date = st.date_input("시험 날짜")
-            test_info = st.text_input("시험 내용 (예: 에세이 쓰기, 발표 등)")
-            submit_test = st.form_submit_button("등록하기")
-            
-            if submit_test:
-                # [구글 시트 연동 시] 위 건의함처럼 conn.update 로직 추가 필요
-                st.success(f"{sub_name} 수행평가가 등록되었습니다.")
-                # 테스트용 데이터 저장 (실제 배포 시엔 구글 시트에 누적 저장되도록 설정)
+    # 관리자 비밀번호가 맞을 때만 입력창 노출
+    with st.expander("➕ 일정 추가하기 (반장/선생님 전용)"):
+        pw = st.text_input("관리자 암호", type="password", key="test_pw")
+        if pw == "1234": # 비밀번호 설정
+            with st.form("exam_form", clear_on_submit=True):
+                sub = st.text_input("과목명 (예: 수학)")
+                dt = st.date_input("시험일")
+                detail = st.text_input("시험 내용 (예: 문제 풀이 및 발표)")
+                if st.form_submit_button("일정 등록"):
+                    # 데이터 읽기 및 추가
+                    df = conn.read(spreadsheet=SHEET_URL)
+                    new_row = pd.DataFrame({"날짜": [dt.strftime("%Y-%m-%d")], "과목": [sub], "내용": [detail], "유형": ["수행"]})
+                    updated_df = pd.concat([df, new_row], ignore_index=True)
+                    conn.update(spreadsheet=SHEET_URL, data=updated_df)
+                    st.success("일정이 등록되었습니다!")
+                    st.rerun()
 
-    # 출력 게시판 (예시 데이터)
-    # 실제로는 conn.read()로 가져온 데이터를 보여줍니다.
-    sample_data = pd.DataFrame([
-        {"과목": "수학", "날짜": "2024-06-15", "내용": "삼각함수 프린트물 풀이"},
-        {"과목": "영어", "날짜": "2024-06-18", "내용": "단어 200개 받아쓰기"}
-    ])
-    st.table(sample_data) # 게시판 형태로 깔끔하게 출력
+    # 일정 출력
+    try:
+        data = conn.read(spreadsheet=SHEET_URL)
+        if not data.empty:
+            st.dataframe(data.sort_values(by="날짜"), use_container_width=True, hide_index=True)
+        else:
+            st.write("등록된 일정이 없습니다.")
+    except:
+        st.warning("데이터를 불러오려면 구글 시트 주소가 필요합니다.")
 
     st.divider()
 
-    # 3. 과목별 시험범위
-    st.subheader("📚 지필평가 시험범위")
+    # (3) 시험 범위 섹션
+    st.subheader("📚 과목별 시험 범위")
+    t1, t2, t3 = st.tabs(["국어", "수학", "영어"])
+    t1.write("📖 교과서 105p~200p, 외부 지문 3개")
+    t2.write("🔢 미분법 전체, 학습지 1~12번")
+    t3.write("🔤 6월 모의고사, 단어장 Day 10~20")
+
+# --- [메뉴 2: 익명 건의함] ---
+elif menu == "📮 익명 건의함":
+    st.title("📮 익명 건의함")
+    st.write("학교 생활 중 불편한 점이나 건의사항을 자유롭게 남겨주세요.")
     
-    # 과목별로 탭을 나누어 깔끔하게 표시
-    tab1, tab2, tab3 = st.tabs(["국어", "수학", "영어"])
-    with tab1:
-        st.info("교과서: 1단원 ~ 3단원 / 유인물: 현대시 5선")
-    with tab2:
-        st.info("교과서: 처음부터 미분까지 / 익힘책: 전 범위")
-    with tab3:
-        st.info("모의고사: 2023년 6월물 / 교과서: 5, 6과")
+    with st.form("suggest_form", clear_on_submit=True):
+        cate = st.selectbox("카테고리", ["급식", "시설", "교우관계", "기타"])
+        title = st.text_input("제목")
+        msg = st.text_area("건의 내용")
+        if st.form_submit_button("제출하기"):
+            if title and msg:
+                # 건의사항은 별도의 시트나 태그로 관리 가능
+                st.success("익명으로 안전하게 접수되었습니다!")
+            else:
+                st.error("내용을 입력해주세요.")
