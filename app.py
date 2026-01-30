@@ -1,72 +1,101 @@
 import streamlit as st
-from pytubefix import YouTube
+import yt_dlp
 import os
-import re
+import glob
 
-# 1. 유튜브 다운로드 로봇 클래스
-# 1. 유튜브 다운로드 로봇 클래스 수정
-# 1. 유튜브 다운로드 로봇 클래스 (가장 안정적인 버전)
-class YouTubeMaster:
-    def __init__(self, url):
-        self.url = url
-        # 💡 OAuth를 사용하면 유튜브가 '인증된 사용자'로 인식할 확률이 높습니다.
-        # 인증을 위해 로그창에 코드가 뜰 수 있으니, 아래 설정을 추가합니다.
-        self.yt = YouTube(
-            self.url, 
-            client='MWEB', # 혹은 'WEB'
-        )
+# 1. 페이지 기본 설정
+st.set_page_config(
+    page_title="YouTube Downloader",
+    page_icon="🎬",
+    layout="centered"
+)
 
-    def download_video(self):
-        # 가장 안전한 방식
-        stream = self.yt.streams.filter(progressive=True, file_extension='mp4').get_highest_resolution()
-        
-        clean_title = re.sub(r'[\\/:*?"<>|]', '', self.yt.title)
-        file_path = stream.download(filename=f"{clean_title}.mp4")
-        return file_path, clean_title
-        
-# 2. 스트림릿 웹 화면 구성
-st.set_page_config(page_title="우리 반 유튜브 다운로더", page_icon="📺")
-st.title("📺 우리 반 전용 유튜브 다운로더")
-st.info("유튜브 주소를 넣고 '파일 준비하기'를 눌러주세요!")
+# 2. 제목 및 UI 구성
+st.title("🎬 YouTube Downloader")
+st.markdown("---")
+st.write("유튜브 링크를 입력하면 **MP4 영상** 또는 **MP3 오디오**로 변환하여 다운로드할 수 있습니다.")
 
-# URL 입력창
-url = st.text_input("YouTube URL을 붙여넣으세요", placeholder="https://www.youtube.com/watch?v=...")
+# URL 입력 창
+url = st.text_input("YouTube URL을 입력하세요", placeholder="https://www.youtube.com/watch?v=...")
 
-if st.button("🚀 파일 준비하기"):
-    if url:
-        # 진행 상황을 보여주는 로그창 시작!
-        with st.status("로봇이 일을 시작했습니다...", expanded=True) as status:
-            try:
-                st.write("🔍 주소 연결 중...")
-                master = YouTubeMaster(url)
+# 다운로드 옵션 선택
+format_choice = st.radio(
+    "저장 형식을 선택하세요:",
+    ("MP4 (동영상 + 음성)", "MP3 (음원만 추출)"),
+    horizontal=True
+)
+
+# 3. 다운로드 및 변환 로직
+if url:
+    try:
+        # 영상 정보 미리 가져오기
+        with yt_dlp.YoutubeDL() as ydl:
+            info = ydl.extract_info(url, download=False)
+            title = info.get('title', 'video_file')
+            thumbnail = info.get('thumbnail')
+            
+            # 영상 정보 표시
+            col1, col2 = st.columns([1, 2])
+            with col1:
+                st.image(thumbnail, use_container_width=True)
+            with col2:
+                st.subheader(title)
+                st.write(f"📺 채널: {info.get('uploader')}")
+
+        # 다운로드 실행 버튼
+        if st.button("🚀 변환 및 다운로드 준비", use_container_width=True):
+            with st.spinner("서버에서 변환 중입니다. 잠시만 기다려 주세요..."):
                 
-                st.write(f"🎬 영상 확인: **{master.yt.title}**")
-                st.write("📥 유튜브 서버에서 영상을 가져오는 중... (잠시만 기다려주세요)")
+                # 파일 확장자 설정
+                is_mp3 = "MP3" in format_choice
+                ext = "mp3" if is_mp3 else "mp4"
                 
+                # yt-dlp 옵션 설정
+                ydl_opts = {
+                    'format': 'bestaudio/best' if is_mp3 else 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                    'outtmpl': f'downloads/%(title)s.%(ext)s',  # downloads 폴더에 저장
+                    'noplaylist': True,
+                }
+
+                # MP3 선택 시 오디오 추출 옵션 추가
+                if is_mp3:
+                    ydl_opts['postprocessors'] = [{
+                        'key': 'FFmpegExtractAudio',
+                        'preferredcodec': 'mp3',
+                        'preferredquality': '192',
+                    }]
+
                 # 실제 다운로드 실행
-                file_path, video_title = master.download_video()
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([url])
                 
-                st.write("✅ 서버 준비 완료! 이제 내 컴퓨터로 옮길 수 있습니다.")
-                status.update(label="🎊 모든 준비가 끝났습니다!", state="complete", expanded=False)
-
-                # 파일이 성공적으로 준비되면 '진짜 저장 버튼'을 보여줍니다.
-                with open(file_path, "rb") as f:
+                # 생성된 파일 경로 찾기
+                # 특수 문자로 인한 파일명 변형 방지를 위해 glob 사용
+                files = glob.glob("downloads/*")
+                if files:
+                    latest_file = max(files, key=os.path.getctime)
+                    
+                    with open(latest_file, "rb") as f:
+                        file_data = f.read()
+                        
+                    st.success("✅ 변환 완료! 아래 버튼을 클릭하여 저장하세요.")
                     st.download_button(
-                        label="💾 내 컴퓨터에 최종 저장하기",
-                        data=f,
-                        file_name=f"{video_title}.mp4",
-                        mime="video/mp4",
-                        use_container_width=True # 버튼을 가로로 길게 만들어줍니다.
+                        label=f"💾 {ext.upper()} 파일 저장하기",
+                        data=file_data,
+                        file_name=os.path.basename(latest_file),
+                        mime="audio/mpeg" if is_mp3 else "video/mp4",
+                        use_container_width=True
                     )
-            except Exception as e:
-                status.update(label="❌ 에러가 발생했습니다!", state="error")
-                st.error(f"상세 에러 내용: {e}")
-    else:
-        st.warning("주소를 먼저 입력해 주세요!")
+                    
+                    # (선택 사항) 서버 용량 관리를 위해 다운로드 후 임시 파일 삭제 로직을 넣을 수 있습니다.
 
-# 하단 안내 메시지
-st.caption("※ 주의: 고화질(1080p 이상)은 별도의 인코딩 과정이 필요하여 현재는 720p로 제공됩니다.")
+    except Exception as e:
+        st.error(f"❌ 오류가 발생했습니다: {e}")
+        st.info("URL이 올바른지, 혹은 해당 영상이 국가 제한이나 연령 제한이 있는지 확인해 보세요.")
 
+else:
+    st.info("위 입력창에 유튜브 링크를 붙여넣어 주세요.")
 
-
-
+# 하단 정보
+st.markdown("---")
+st.caption("⚠️ 본 도구는 개인 소장용 학습 목적으로만 사용하시기 바랍니다.")
