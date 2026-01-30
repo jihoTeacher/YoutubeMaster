@@ -1,78 +1,70 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
-import os
 
 # 페이지 설정
-st.set_page_config(page_title="행복한 우리 반 건의함", page_icon="📮")
+st.set_page_config(page_title="우리 반 온라인 건의함", page_icon="📮")
 
-# 데이터 저장 파일 경로
-DATA_FILE = "suggestions.csv"
+st.title("📮 행복한 우리 반 건의함")
+st.markdown("여러분의 소중한 의견이 더 좋은 우리 반을 만듭니다.")
 
-# 데이터 불러오기 함수
-def load_data():
-    if os.path.exists(DATA_FILE):
-        return pd.read_csv(DATA_FILE)
-    else:
-        return pd.DataFrame(columns=["날짜", "카테고리", "제목", "내용"])
+# --- 구글 스프레드시트 연결 설정 ---
+# 시트 URL을 여기에 붙여넣으세요 (또는 secrets에 저장 가능)
+sheet_url = "https://docs.google.com/spreadsheets/d/1SpUO6iHX1cnEkp26xEF-w1apY2NzF7ScJg8Ka0tTa-g/edit?usp=sharing"
 
-# 데이터 저장 함수
-def save_data(category, title, content):
-    df = load_data()
-    new_data = pd.DataFrame({
-        "날짜": [datetime.now().strftime("%Y-%m-%d %H:%M")],
-        "카테고리": [category],
-        "제목": [title],
-        "내용": [content]
-    })
-    df = pd.concat([df, new_data], ignore_index=True)
-    df.to_csv(DATA_FILE, index=False, encoding='utf-8-sig')
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 사이드바 메뉴
-menu = st.sidebar.selectbox("메뉴", ["건의하기", "건의함 확인(관리자)"])
+# --- 메뉴 선택 ---
+menu = st.sidebar.radio("메뉴", ["의견 남기기", "선생님 확인용"])
 
-# --- 건의하기 화면 ---
-if menu == "건의하기":
-    st.title("📮 우리 반 비밀 건의함")
-    st.write("학급을 위해 하고 싶은 말을 자유롭게 남겨주세요. 내용은 익명으로 전달됩니다.")
+if menu == "의견 남기기":
+    st.subheader("📝 익명 건의서 작성")
     
-    with st.form("suggestion_form", clear_on_submit=True):
-        category = st.selectbox("카테고리", ["시설/환경", "수업 관련", "교우관계", "기타 의견"])
-        title = st.text_input("제목", placeholder="한 줄 요약을 입력하세요.")
-        content = st.text_area("내용", placeholder="상세한 의견을 적어주세요.")
+    with st.form("suggestion_form"):
+        category = st.selectbox("분류", ["환경개선", "수업관련", "교우관계", "기타"])
+        title = st.text_input("한 줄 요약")
+        content = st.text_area("상세 내용")
+        submit = st.form_submit_button("전송하기")
         
-        submit_button = st.form_submit_button("보내기")
-        
-        if submit_button:
+        if submit:
             if title and content:
-                save_data(category, title, content)
-                st.success("건의사항이 안전하게 전달되었습니다! 감사합니다.")
+                # 1. 기존 데이터 읽기
+                existing_data = conn.read(spreadsheet=sheet_url, usecols=[0,1,2,3])
+                existing_data = existing_data.dropna(how="all")
+                
+                # 2. 새 데이터 생성
+                new_entry = pd.DataFrame({
+                    "날짜": [datetime.now().strftime("%Y-%m-%d %H:%M")],
+                    "카테고리": [category],
+                    "제목": [title],
+                    "내용": [content]
+                })
+                
+                # 3. 데이터 합치기 및 업데이트
+                updated_df = pd.concat([existing_data, new_entry], ignore_index=True)
+                conn.update(spreadsheet=sheet_url, data=updated_df)
+                
+                st.success("성공적으로 전달되었습니다. 익명이 보장되니 안심하세요!")
             else:
-                st.error("제목과 내용을 모두 입력해주세요.")
+                st.warning("내용을 모두 채워주세요.")
 
-# --- 관리자 화면 ---
-elif menu == "건의함 확인(관리자)":
-    st.title("🔒 건의함 확인")
+elif menu == "선생님 확인용":
+    st.subheader("🔒 건의함 목록")
+    password = st.text_input("비밀번호", type="password")
     
-    password = st.text_input("관리자 비밀번호를 입력하세요.", type="password")
-    
-    # 실제 배포시에는 비밀번호를 환경변수 등으로 안전하게 관리해야 합니다.
-    if password == "1234": # 초기 비밀번호
-        st.success("환영합니다, 선생님!")
-        df = load_data()
+    if password == "1234":  # 선생님만 아는 비밀번호
+        # 시트 데이터 실시간 읽기
+        data = conn.read(spreadsheet=sheet_url)
+        data = data.dropna(how="all") # 빈 줄 제거
         
-        if not df.empty:
-            st.dataframe(df.sort_values(by="날짜", ascending=False), use_container_width=True)
+        if not data.empty:
+            st.dataframe(data.sort_values(by="날짜", ascending=False), use_container_width=True)
             
-            # 통계 보기
-            st.subheader("📊 카테고리별 통계")
-            st.bar_chart(df["카테고리"].value_counts())
-            
-            if st.button("내용 초기화(모두 삭제)"):
-                if os.path.exists(DATA_FILE):
-                    os.remove(DATA_FILE)
-                    st.rerun()
+            # 간단한 통계
+            st.divider()
+            st.write(f"현재 총 **{len(data)}건**의 의견이 접수되었습니다.")
         else:
-            st.write("아직 접수된 건의사항이 없습니다.")
+            st.info("아직 접수된 내용이 없습니다.")
     elif password:
-        st.error("비밀번호가 틀렸습니다.")
+        st.error("비밀번호가 올바르지 않습니다.")
